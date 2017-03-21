@@ -57,13 +57,13 @@ public class Account implements AccountInterface {
     char operation = messageParts[0].charAt(0);
     switch (operation) {
       case 'e': // ELECTION
-        this.handleElection(messageParts[1], messageParts[2]);
+        Account.handleElection(messageParts[1], messageParts[2]);
         break;
       case 't': // TRANSACTION
-        this.handleTransaction(messageParts[1]);
+        Account.handleTransaction(messageParts[1]);
         break;
       case 'm': // MARKER
-        this.handleMarker(messageParts[1], sender);
+        Account.handleMarker(messageParts[1], sender);
         break;
     }
     if (isRecording.get(sender)) {
@@ -73,7 +73,7 @@ public class Account implements AccountInterface {
     return true;
   }
 
-  public boolean handleElection(String initiator, String winner) {
+  public static boolean handleElection(String initiator, String winner) {
     try {
       // Handle election message
       if (initiator.equals(selfID)) {
@@ -88,16 +88,6 @@ public class Account implements AccountInterface {
         directory.get(nextPeer).send("e|" + initiator + "|" + winner, selfID);
         System.out.println("SENT: " + "e|" + initiator + "|" + winner + " TO " + nextPeer);
       }
-      // If I'm the leader, start the snapshot
-      if (isLeader && !markerReceived) {
-        for (String key : directory.keySet()) {
-          this.takeLocalSnapshot();
-          directory.get(key).send("m|" + selfID, selfID);
-          System.out.println("SENT: " + "m|" + selfID + " TO " + key);
-          isRecording.put(key, true);
-          markerReceived = true;
-        }
-      }
     } catch (RemoteException e) {
       System.err.println("Connection exception: " + e.toString());
       e.printStackTrace();
@@ -106,23 +96,25 @@ public class Account implements AccountInterface {
     return true;
   }
 
-  public boolean handleTransaction(String value) {
+  public static boolean handleTransaction(String value) {
     balance += Integer.parseInt(value);
     return true;
   }
 
-  public boolean handleMarker(String initiator, String sender) {
+  public static boolean handleMarker(String initiator, String sender) {
     try {
       System.out.println("markerReceived: " + Boolean.toString(markerReceived));
       if (!markerReceived) {
-        this.takeLocalSnapshot();
+        Account.takeLocalSnapshot();
         markerReceived = true;
         for (String key : directory.keySet()) {
-          directory.get(key).send("m|" + initiator, selfID);
-          System.out.println("SENT: " + "m|" + initiator + " TO " + key);
           if (!key.equals(sender)) {
             isRecording.put(key, true);
           }
+        }
+        for (String key : directory.keySet()) {
+          directory.get(key).send("m|" + initiator, selfID);
+          System.out.println("SENT: " + "m|" + initiator + " TO " + key);
         }
         System.out.println("isRecording: " + isRecording.toString());
       } else {
@@ -195,15 +187,23 @@ public class Account implements AccountInterface {
           }
         }
 
-
+        // Conduct the leader election process
         TimeUnit.SECONDS.sleep(10);
         String message = "e|" + selfID + "|" + selfID;
         directory.get(nextPeer).send(message, selfID);
         System.out.println("SENT: " + message + " TO " + nextPeer);
 
-        while (!leaderElected) {
-          System.out.print("Leader not yet elected");
-          TimeUnit.SECONDS.sleep(1);
+        // If I'm the leader, start the snapshot
+        if (isLeader && !markerReceived) {
+          Account.takeLocalSnapshot();
+          markerReceived = true;
+          for (String key : directory.keySet()) {
+            isRecording.put(key, true);
+          }
+          for (String key : directory.keySet()) {
+            directory.get(key).send("m|" + selfID, selfID);
+            System.out.println("SENT: " + "m|" + selfID + " TO " + key);
+          }
         }
 
         // Loop to transfer $
